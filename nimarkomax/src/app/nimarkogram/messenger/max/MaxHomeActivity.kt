@@ -46,7 +46,7 @@ class MaxHomeActivity : Activity() {
     private var savedChats = JSONArray()
     private val ui = Handler(Looper.getMainLooper())
     private val accent = Color.rgb(244, 65, 144)
-    private val background = Color.rgb(247, 248, 251)
+    private val canvasColor = Color.rgb(247, 248, 251)
     private val line = Color.rgb(230, 233, 239)
     private val ink = Color.rgb(28, 31, 42)
     private val secondary = Color.rgb(129, 132, 144)
@@ -91,7 +91,7 @@ class MaxHomeActivity : Activity() {
     private fun base() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(background)
+            setBackgroundColor(canvasColor)
         }
         setContentView(root)
     }
@@ -357,7 +357,7 @@ class MaxHomeActivity : Activity() {
         header(currentChatTitle, true, "↻") { refreshHistory() }
         val scroll = ScrollView(this).apply {
             isFillViewport = true
-            setBackgroundColor(background)
+            setBackgroundColor(canvasColor)
         }
         val bubbles = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -408,7 +408,7 @@ class MaxHomeActivity : Activity() {
             textSize = 15f
             maxLines = 5
             setPadding(dp(12), dp(6), dp(12), dp(6))
-            background = bg(background, 19)
+            background = bg(canvasColor, 19)
         }
         composer.addView(field, LinearLayout.LayoutParams(0, -2, 1f))
         composer.addView(text("➤", 28f, accent, true).apply {
