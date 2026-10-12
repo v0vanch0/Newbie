@@ -1,0 +1,158 @@
+name: Build NimarkoMAX native Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'nimarkomax/**'
+      - '.github/workflows/nimarkomax.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: NimarkoGram + Kolibri MAX (arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout port source and CI
+        uses: actions/checkout@v4
+
+      - name: Reclaim disk for NimarkoGram / Android NDK / Rust
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: false
+          dotnet: true
+          haskell: true
+          tool-cache: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Checkout REAL NimarkoGram Android sources (pinned)
+        shell: bash
+        run: |
+          git clone --depth 1 --recurse-submodules https://github.com/Ettacent/NimarkoGram.git nimarkogram
+          cd nimarkogram
+          git fetch --depth 1 origin a0eab5ca820509b6351d6e8af9b56a5247d25d63
+          git checkout --detach a0eab5ca820509b6351d6e8af9b56a5247d25d63
+          git submodule update --init --recursive --depth 1
+          test -f TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+          test -d TMessagesProj/src/main/java/app/nimarkogram/messenger/plugins
+
+      - name: Checkout MAX protocol core only (pinned MIT/Apache)
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/KometTeam/kolibri.git kolibri
+          cd kolibri
+          git fetch --depth 1 origin a6cdce9e0e75d33aa0c398988d3b45e25c8908ab
+          git checkout --detach a6cdce9e0e75d33aa0c398988d3b45e25c8908ab
+          test -f kolibri-kotlin/rust/Cargo.toml
+
+      - name: Apply the native NimarkoGram MAX port
+        run: |
+          python3 -m py_compile nimarkomax/apply.py
+          python3 nimarkomax/apply.py nimarkogram kolibri nimarkomax
+          grep -q 'MaxHomeActivity' nimarkogram/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
+          ! test -e nimarkogram/pubspec.yaml
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Python 3.11 for Chaquopy
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install exact Android toolchains for NimarkoGram
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;26.3.11579264" "cmake;3.22.1"
+          df -h .
+
+      - name: Setup Rust Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Kolibri native build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: kolibri/kolibri-kotlin/rust
+          cache-on-failure: true
+
+      - name: Install cargo-ndk
+        shell: bash
+        run: |
+          cargo install cargo-ndk --version 3.5.4 --locked
+          cargo ndk --version
+
+      - name: Build real Kolibri JNI protocol library for arm64
+        shell: bash
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.3.11579264"
+          cargo ndk -t arm64-v8a \
+            -o "$GITHUB_WORKSPACE/nimarkogram/TMessagesProj/jni" \
+            build --release --manifest-path "$GITHUB_WORKSPACE/kolibri/kolibri-kotlin/rust/Cargo.toml"
+          test -s nimarkogram/TMessagesProj/jni/arm64-v8a/libkolibri_kotlin.so
+          du -h nimarkogram/TMessagesProj/jni/arm64-v8a/libkolibri_kotlin.so
+
+      - name: Supply optional build settings
+        shell: bash
+        working-directory: nimarkogram
+        run: |
+          cp private.properties.example private.properties
+          {
+            echo 'TELEGRAM_API_ID=0'
+            echo 'TELEGRAM_API_HASH='
+            echo 'NIMARKO_FIREBASE_ENABLED=false'
+          } >> private.properties
+          chmod +x gradlew
+          mkdir -p ~/.gradle
+          echo 'org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g' >> ~/.gradle/gradle.properties
+
+      - name: Build native NimarkoMAX debug-signed Android APK
+        working-directory: nimarkogram
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx4g
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :TMessagesProj_AppStandalone:assembleAfatDebug \
+            -PngArm64Only --max-workers=2
+
+      - name: Copy APK, prove this is the NimarkoGram application
+        shell: bash
+        run: |
+          mkdir -p out
+          APK="$(find nimarkogram/TMessagesProj_AppStandalone/build/outputs/apk -type f -name '*.apk' | grep '/afat/debug/' | head -1)"
+          test -f "$APK"
+          cp "$APK" out/NimarkoMAX-native-arm64-debug.apk
+          sha256sum out/NimarkoMAX-native-arm64-debug.apk > out/SHA256SUMS
+          du -h out/*
+
+      - name: Upload NimarkoMAX APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NimarkoMAX-native-arm64-apk
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NimarkoMAX-build-diagnostics
+          path: |
+            nimarkogram/TMessagesProj/build/reports
+            nimarkogram/TMessagesProj_AppStandalone/build/reports
+          if-no-files-found: ignore
