@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: nimarkomax-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: NimarkoGram + Kolibri MAX (arm64)
@@ -34,11 +38,11 @@ jobs:
       - name: Checkout REAL NimarkoGram Android sources (pinned)
         shell: bash
         run: |
-          git clone --depth 1 --recurse-submodules https://github.com/Ettacent/NimarkoGram.git nimarkogram
+          git clone --depth 1 https://github.com/Ettacent/NimarkoGram.git nimarkogram
           cd nimarkogram
           git fetch --depth 1 origin a0eab5ca820509b6351d6e8af9b56a5247d25d63
           git checkout --detach a0eab5ca820509b6351d6e8af9b56a5247d25d63
-          git submodule update --init --recursive --depth 1
+          git -c submodule.fetchJobs=8 submodule update --init --recursive --depth 1
           test -f TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
           test -d TMessagesProj/src/main/java/app/nimarkogram/messenger/plugins
 
