@@ -62,12 +62,15 @@ jobs:
           from pathlib import Path
           file = Path("kolibri/kolibri-kotlin/rust/src/lib.rs")
           code = file.read_text(encoding="utf8")
-          fields = chr(10).join(("    is_pwa: None,", "    header_user_agent: None,", ""))
-          if code.count(fields) != 2:
-              raise SystemExit("Unexpected Kolibri JNI upstream signature layout")
-          # Those struct initializer fields are valid; only the duplicate
-          # parameters in Java_ru_kolibri_Native_sessionNew are invalid Rust.
-          file.write_text(code.replace(fields, "", 1), encoding="utf8")
+          signature = code.index('pub extern "system" fn Java_ru_kolibri_Native_sessionNew')
+          body = code.index('    let proxy = match', signature)
+          prefix, region, suffix = code[:signature], code[signature:body], code[body:]
+          bad = "    is_pwa: None,\n    header_user_agent: None,\n"
+          assert region.count(bad) == 1, 'JNI declaration changed upstream'
+          patched = prefix + region.replace(bad, "", 1) + suffix
+          assert '    is_pwa: None,\n' in suffix, 'handshake initializer unexpectedly missing'
+          file.write_text(patched, encoding="utf8")
+          print("Patched invalid Kolibri JNI function parameters only")
           PY
 
       - name: Apply the native NimarkoGram MAX port
