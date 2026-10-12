@@ -55,6 +55,22 @@ jobs:
           git checkout --detach a6cdce9e0e75d33aa0c398988d3b45e25c8908ab
           test -f kolibri-kotlin/rust/Cargo.toml
 
+      - name: Fix invalid JNI function signature in pinned Kolibri
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          file = Path("kolibri/kolibri-kotlin/rust/src/lib.rs")
+          code = file.read_text(encoding="utf8")
+          fields = "    is_pwa: None,\\n    header_user_agent: None,\\n"
+          fields = fields.replace("\\\\n", "\\n")
+          if code.count(fields) != 2:
+              raise SystemExit("Unexpected Kolibri JNI upstream signature layout")
+          # Those struct initializer fields are valid; only the duplicate
+          # parameters in Java_ru_kolibri_Native_sessionNew are invalid Rust.
+          file.write_text(code.replace(fields, "", 1), encoding="utf8")
+          PY
+
       - name: Apply the native NimarkoGram MAX port
         run: |
           python3 -m py_compile nimarkomax/apply.py
